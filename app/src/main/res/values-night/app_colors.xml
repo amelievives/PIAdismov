@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pc_bg">#FF000000</color>
+    <color name="pc_surface">#FF1C1C1E</color>
+    <color name="pc_text">#FFFFFFFF</color>
+    <color name="pc_text_secondary">#FF98989F</color>
+    <color name="pc_divider">#FF38383A</color>
+    <color name="pc_accent">#FFFF375F</color>
+    <color name="pc_accent_soft">#29FF375F</color>
+</resources>

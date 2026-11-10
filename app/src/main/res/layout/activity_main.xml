@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/pc_bg"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical">
+
+    <!-- Estado (texto pequeño en mayúsculas, como las "etiquetas" de Apple Music) -->
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:letterSpacing="0.1"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:text="APAGADO"
+        android:textColor="@color/pc_text_secondary"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <!-- Título con tipografía serif (estilo Substack) -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="serif"
+        android:paddingStart="24dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="24dp"
+        android:text="Palabra clave"
+        android:textColor="@color/pc_text"
+        android:textSize="34sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="24dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="24dp"
+        android:text="Di esta palabra y empezará a grabar. Dila otra vez para detener."
+        android:textColor="@color/pc_text_secondary"
+        android:textSize="15sp" />
+
+    <!-- Tarjeta con el campo de la palabra -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="20dp"
+        android:layout_marginEnd="24dp"
+        android:background="@drawable/bg_card"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="12dp">
+
+        <EditText
+            android:id="@+id/et_keyword"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:fontFamily="serif"
+            android:hint="ej. grabar"
+            android:imeOptions="actionDone"
+            android:inputType="text|textNoSuggestions"
+            android:minHeight="48dp"
+            android:singleLine="true"
+            android:textColor="@color/pc_text"
+            android:textColorHint="@color/pc_text_secondary"
+            android:textSize="26sp" />
+    </LinearLayout>
+
+    <!-- Botón principal -->
+    <TextView
+        android:id="@+id/btn_toggle"
+        android:layout_width="match_parent"
+        android:layout_height="54dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="24dp"
+        android:background="@drawable/bg_primary_button"
+        android:clickable="true"
+        android:focusable="true"
+        android:fontFamily="sans-serif-medium"
+        android:gravity="center"
+        android:text="Activar escucha"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp" />
+
+    <!-- Solo se ve mientras graba -->
+    <TextView
+        android:id="@+id/btn_stop_rec"
+        android:layout_width="match_parent"
+        android:layout_height="54dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="24dp"
+        android:background="@drawable/bg_primary_button"
+        android:clickable="true"
+        android:focusable="true"
+        android:fontFamily="sans-serif-medium"
+        android:gravity="center"
+        android:text="Detener grabación"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="28dp"
+        android:letterSpacing="0.1"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="4dp"
+        android:text="GRABACIONES"
+        android:textColor="@color/pc_text_secondary"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ListView
+            android:id="@+id/lv_recordings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:divider="@color/pc_divider"
+            android:dividerHeight="0.5dp"
+            android:listSelector="?attr/selectableItemBackground"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:scrollbars="none" />
+
+        <TextView
+            android:id="@+id/tv_empty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:padding="32dp"
+            android:text="Aún no hay grabaciones.\nActiva la escucha y di tu palabra."
+            android:textColor="@color/pc_text_secondary"
+            android:textSize="15sp" />
+    </FrameLayout>
+</LinearLayout>
