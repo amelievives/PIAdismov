@@ -20,18 +20,18 @@
         android:textSize="12sp"
         android:textStyle="bold" />
 
-    <!-- Título con tipografía serif (estilo Substack) -->
+    <!-- Título en Montserrat ExtraBold -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:fontFamily="serif"
+        android:fontFamily="@font/montserrat_extrabold"
+        android:letterSpacing="-0.02"
         android:paddingStart="24dp"
         android:paddingTop="4dp"
         android:paddingEnd="24dp"
-        android:text="Palabra clave"
+        android:text="Grabadora"
         android:textColor="@color/pc_text"
-        android:textSize="34sp"
-        android:textStyle="bold" />
+        android:textSize="36sp" />
 
     <TextView
         android:layout_width="match_parent"
@@ -56,6 +56,15 @@
         android:paddingTop="12dp"
         android:paddingEnd="20dp"
         android:paddingBottom="12dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.1"
+            android:text="PALABRA CLAVE"
+            android:textColor="@color/pc_text_secondary"
+            android:textSize="11sp"
+            android:textStyle="bold" />
 
         <EditText
             android:id="@+id/et_keyword"

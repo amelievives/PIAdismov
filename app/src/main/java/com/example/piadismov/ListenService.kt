@@ -1,4 +1,5 @@
 package com.example.piadismov
+
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
@@ -21,7 +22,6 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import org.json.JSONArray
 import org.json.JSONObject
 import org.vosk.LibVosk
 import org.vosk.LogLevel
@@ -155,9 +155,9 @@ class ListenService : Service() {
             LibVosk.setLogLevel(LogLevel.WARNINGS)
             model = Model(prepareModel().absolutePath)
 
-            // Gramática restringida: solo tu palabra (o "[unk]" para todo lo demás).
-            val grammar = JSONArray().put(keyword).put("[unk]").toString()
-            rec = Recognizer(model, SAMPLE_RATE.toFloat(), grammar)
+            // Vocabulario completo (sin gramática restringida): así las demás palabras se
+            // reconocen como lo que son y no se confunden con tu palabra clave.
+            rec = Recognizer(model, SAMPLE_RATE.toFloat())
 
             val minBuf = AudioRecord.getMinBufferSize(
                 SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
@@ -186,8 +186,8 @@ class ListenService : Service() {
                 if (wav == null) {
                     // MODO ESCUCHA: buscar la palabra
                     if (now < ignoreUntil) continue
-                    val json = if (rec.acceptWaveForm(buf, n)) rec.result else rec.partialResult
-                    if (containsKeyword(json, keyword)) {
+                    // Solo se evalúa cuando Vosk da un resultado FINAL (la frase terminó).
+                    if (rec.acceptWaveForm(buf, n) && heardKeyword(rec.result, keyword)) {
                         rec.reset()
                         stopRecordingRequested = false
                         wav = WavWriter(newRecordingFile(), SAMPLE_RATE)
@@ -204,8 +204,7 @@ class ListenService : Service() {
 
                     // Decir la palabra otra vez también detiene (pasado un margen inicial).
                     if (!stop && elapsed >= STOP_WORD_GUARD_MS) {
-                        val json = if (rec.acceptWaveForm(buf, n)) rec.result else rec.partialResult
-                        if (containsKeyword(json, keyword)) stop = true
+                        if (rec.acceptWaveForm(buf, n) && heardKeyword(rec.result, keyword)) stop = true
                     }
 
                     if (stop) {
@@ -233,10 +232,12 @@ class ListenService : Service() {
         }
     }
 
-    private fun containsKeyword(json: String, keyword: String): Boolean {
-        val o = JSONObject(json)
-        val text = o.optString("text", o.optString("partial", ""))
-        return text.contains(keyword)
+    /** True si la frase reconocida contiene la palabra clave COMPLETA (no como parte de otra). */
+    private fun heardKeyword(json: String, keyword: String): Boolean {
+        val text = JSONObject(json).optString("text", "").trim()
+        if (text.isEmpty()) return false
+        Log.d(TAG, "oído: «$text»")
+        return " $text ".contains(" $keyword ")
     }
 
     private fun newRecordingFile(): File {
