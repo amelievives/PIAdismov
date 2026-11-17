@@ -1,6 +1,7 @@
 package com.example.piadismov
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -146,6 +147,7 @@ class ListenService : Service() {
 
     // ---------------------------------------------------------------- bucle principal
 
+    @SuppressLint("MissingPermission")
     private fun loop(keyword: String) {
         var model: Model? = null
         var detector: VoiceKeywordDetector? = null
@@ -284,7 +286,7 @@ class ListenService : Service() {
 
         val b = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_mic)
-            .setColor(ContextCompat.getColor(this, R.color.pc_accent))
+            .setColor(ContextCompat.getColor(this, R.color.recorder_accent))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
