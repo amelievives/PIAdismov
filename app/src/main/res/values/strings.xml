@@ -1,3 +1,39 @@
 <resources>
     <string name="app_name">PIAdismov</string>
+    <string name="recorder_title">Grabadora</string>
+    <string name="recorder_status_idle">Micrófono apagado</string>
+    <string name="recorder_heading_idle">Listo para escuchar</string>
+    <string name="recorder_detail_idle">Activa la escucha para usar la detección por voz.</string>
+    <string name="recorder_status_loading">Cargando modelo</string>
+    <string name="recorder_heading_loading">Preparando la escucha</string>
+    <string name="recorder_detail_loading">Puede tardar un momento la primera vez.</string>
+    <string name="recorder_status_listening">Escuchando</string>
+    <string name="recorder_heading_listening">Di tu palabra clave</string>
+    <string name="recorder_detail_listening">Di la palabra y haz una pausa breve para que la app la detecte.</string>
+    <string name="recorder_status_recording">Grabando</string>
+    <string name="recorder_heading_recording">Grabación en curso</string>
+    <string name="recorder_detail_recording">Repite tu palabra clave o pulsa Detener grabación.</string>
+    <string name="recorder_enable">Activar escucha</string>
+    <string name="recorder_disable">Apagar escucha</string>
+    <string name="recorder_stop">Detener grabación</string>
+    <string name="recorder_keyword">Palabra clave</string>
+    <string name="recorder_keyword_hint">Ej. grabar</string>
+    <string name="recorder_keyword_help">Dila para empezar a grabar y repítela para detener.</string>
+    <string name="recorder_keyword_required">Escribe una palabra clave que contenga letras.</string>
+    <string name="recorder_keyword_saved">Palabra clave guardada.</string>
+    <string name="recorder_keyword_reactivate">Palabra guardada. Apaga y vuelve a activar la escucha para usarla.</string>
+    <string name="recorder_save">Guardar</string>
+    <string name="recorder_history">Grabaciones</string>
+    <string name="recorder_empty">Aún no hay grabaciones.</string>
+    <string name="recorder_delete">Eliminar grabación</string>
+    <string name="recorder_delete_action">Eliminar grabación del %1$s</string>
+    <string name="recorder_widget_name">Grabadora por voz</string>
+    <string name="recorder_widget_description">Consulta la palabra clave y controla la escucha desde la pantalla de inicio.</string>
+    <string name="recorder_widget_open">Abrir grabadora</string>
+    <string name="play_recording">Reproducir grabación del %1$s · %2$s</string>
+    <string name="stop_playback">Detener reproducción de la grabación del %1$s · %2$s</string>
+    <plurals name="recorder_audio_count">
+        <item quantity="one">%d audio</item>
+        <item quantity="other">%d audios</item>
+    </plurals>
 </resources>

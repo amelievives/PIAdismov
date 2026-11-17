@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="recorder_background">#15121C</color>
+    <color name="recorder_surface">#211A2D</color>
+    <color name="recorder_field">#181321</color>
+    <color name="recorder_outline">#3B3049</color>
+    <color name="recorder_text">#FAF5FF</color>
+    <color name="recorder_muted">#CCC0D7</color>
+    <color name="recorder_accent">#DCC7FF</color>
+    <color name="recorder_accent_soft">#3B2B55</color>
+    <color name="recorder_selected">#332449</color>
+</resources>

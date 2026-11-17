@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 
@@ -49,36 +50,39 @@ class WordWidget : AppWidgetProvider() {
 
             when (status) {
                 Prefs.STATUS_RECORDING -> {
-                    statusText = "● GRABANDO"
+                    statusText = context.getString(R.string.recorder_status_recording)
                     icon = R.drawable.ic_stop
                     circle = R.drawable.bg_circle_accent
-                    desc = "Detener grabación"
+                    desc = context.getString(R.string.recorder_stop)
                     action = service(2, ListenService.ACTION_STOP_RECORDING)
                 }
                 Prefs.STATUS_LISTENING, Prefs.STATUS_LOADING -> {
-                    statusText = if (status == Prefs.STATUS_LOADING) "CARGANDO…" else "ESCUCHANDO"
+                    statusText = context.getString(
+                        if (status == Prefs.STATUS_LOADING) R.string.recorder_status_loading
+                        else R.string.recorder_status_listening
+                    )
                     icon = R.drawable.ic_power
                     circle = R.drawable.bg_circle_neutral
-                    desc = "Apagar escucha"
+                    desc = context.getString(R.string.recorder_disable)
                     action = service(1, ListenService.ACTION_STOP)
                 }
                 else -> {
-                    statusText = "APAGADO"
+                    statusText = context.getString(R.string.recorder_status_idle)
                     icon = R.drawable.ic_mic
-                    circle = R.drawable.bg_circle_accent
-                    desc = "Activar escucha"
+                    circle = R.drawable.bg_circle_neutral
                     val hasMic = ContextCompat.checkSelfPermission(
                         context, Manifest.permission.RECORD_AUDIO
                     ) == PackageManager.PERMISSION_GRANTED
-                    action = if (hasMic) {
-                        PendingIntent.getForegroundService(
+                    if (hasMic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        desc = context.getString(R.string.recorder_enable)
+                        action = PendingIntent.getForegroundService(
                             context, 0,
                             Intent(context, ListenService::class.java).setAction(ListenService.ACTION_START),
                             flags
                         )
                     } else {
-                        // Sin permiso de micrófono: abrir la app para que lo pida.
-                        PendingIntent.getActivity(
+                        desc = context.getString(R.string.recorder_widget_open)
+                        action = PendingIntent.getActivity(
                             context, 3, Intent(context, MainActivity::class.java), flags
                         )
                     }
@@ -86,7 +90,7 @@ class WordWidget : AppWidgetProvider() {
             }
 
             views.setTextViewText(R.id.widget_status, statusText)
-            views.setTextViewText(R.id.widget_word, "“${Prefs.getKeyword(context)}”")
+            views.setTextViewText(R.id.widget_word, "“${Prefs.getWidgetKeyword(context)}”")
             views.setImageViewResource(R.id.widget_button, icon)
             views.setInt(R.id.widget_button, "setBackgroundResource", circle)
             views.setContentDescription(R.id.widget_button, desc)

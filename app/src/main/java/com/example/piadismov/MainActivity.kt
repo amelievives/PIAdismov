@@ -1,8 +1,10 @@
 package com.example.piadismov
+
 import android.Manifest
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
@@ -12,14 +14,18 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
+import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.text.SimpleDateFormat
@@ -30,10 +36,13 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var etWord: EditText
     private lateinit var tvStatus: TextView
-    private lateinit var btnToggle: TextView
-    private lateinit var btnStopRec: TextView
-    private lateinit var tvEmpty: TextView
-    private lateinit var list: ListView
+    private lateinit var tvStatusTitle: TextView
+    private lateinit var tvStatusDetail: TextView
+    private lateinit var statusDot: View
+    private lateinit var btnToggle: Button
+    private lateinit var btnStopRec: Button
+    private lateinit var emptyRecordings: View
+    private lateinit var recordingsCount: TextView
     private lateinit var adapter: RecordingAdapter
 
     private val files = mutableListOf<File>()
@@ -54,31 +63,45 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
-        etWord = findViewById(R.id.et_keyword)
-        tvStatus = findViewById(R.id.tv_status)
-        btnToggle = findViewById(R.id.btn_toggle)
-        btnStopRec = findViewById(R.id.btn_stop_rec)
-        tvEmpty = findViewById(R.id.tv_empty)
-        list = findViewById(R.id.lv_recordings)
+        val screen = findViewById<View>(R.id.recorder_screen)
+        ViewCompat.setOnApplyWindowInsetsListener(screen) { view, insets ->
+            val safe = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime()
+            )
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(screen)
+
+        val list = findViewById<ListView>(R.id.lv_recordings)
+        val header = layoutInflater.inflate(R.layout.recorder_header, list, false)
+        list.setItemsCanFocus(true)
+        list.addHeaderView(header, null, false)
+
+        etWord = header.findViewById(R.id.et_keyword)
+        tvStatus = header.findViewById(R.id.tv_status)
+        tvStatusTitle = header.findViewById(R.id.tv_status_title)
+        tvStatusDetail = header.findViewById(R.id.tv_status_detail)
+        statusDot = header.findViewById(R.id.status_dot)
+        btnToggle = header.findViewById(R.id.btn_toggle)
+        btnStopRec = header.findViewById(R.id.btn_stop_rec)
+        emptyRecordings = header.findViewById(R.id.empty_recordings)
+        recordingsCount = header.findViewById(R.id.tv_recordings_count)
 
         etWord.setText(Prefs.getKeyword(this))
 
         adapter = RecordingAdapter()
         list.adapter = adapter
-        list.setOnItemClickListener { _, _, pos, _ -> togglePlay(files[pos]) }
-        list.setOnItemLongClickListener { _, _, pos, _ -> confirmDelete(files[pos]); true }
+        screen.requestFocus()
 
-        // La palabra se guarda al pulsar "Listo" en el teclado.
+        header.findViewById<Button>(R.id.btn_save_word).setOnClickListener { saveKeywordFromEditor() }
         etWord.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
-                if (saveKeyword()) {
-                    hideKeyboard()
-                    if (Prefs.getStatus(this) != Prefs.STATUS_IDLE) {
-                        toast("Guardada. Apaga y activa la escucha para aplicarla")
-                    }
-                }
+                saveKeywordFromEditor()
                 true
             } else false
         }
@@ -115,12 +138,25 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ acciones
 
+    private fun saveKeywordFromEditor() {
+        if (!saveKeyword()) return
+        hideKeyboard()
+        val message = if (Prefs.getStatus(this) == Prefs.STATUS_IDLE) {
+            R.string.recorder_keyword_saved
+        } else {
+            R.string.recorder_keyword_reactivate
+        }
+        toast(getString(message))
+    }
+
     private fun saveKeyword(): Boolean {
         val word = etWord.text.toString().trim().lowercase(Locale.ROOT)
-        if (word.isEmpty()) {
-            toast("Escribe una palabra clave")
+        if (!KeywordPhrase(word).isValid) {
+            etWord.requestFocus()
+            etWord.error = getString(R.string.recorder_keyword_required)
             return false
         }
+        etWord.error = null
         if (word != etWord.text.toString()) etWord.setText(word)
         Prefs.setKeyword(this, word)
         WordWidget.refresh(this)
@@ -163,25 +199,45 @@ class MainActivity : AppCompatActivity() {
         val wasPlaying = playing == file
         stopPlayback()
         if (wasPlaying) return
+
         try {
-            player = MediaPlayer().apply {
-                setDataSource(file.absolutePath)
-                setOnCompletionListener { stopPlayback() }
-                prepare()
-                start()
-            }
+            val nextPlayer = MediaPlayer()
+            player = nextPlayer
             playing = file
-        } catch (e: Exception) {
-            stopPlayback()
-            toast("No se pudo reproducir")
+            nextPlayer.setDataSource(file.absolutePath)
+            nextPlayer.setOnPreparedListener { prepared ->
+                if (player === prepared) {
+                    try {
+                        prepared.start()
+                    } catch (_: IllegalStateException) {
+                        handlePlaybackError()
+                    }
+                }
+            }
+            nextPlayer.setOnCompletionListener { completed ->
+                if (player === completed) stopPlayback()
+            }
+            nextPlayer.setOnErrorListener { failed, _, _ ->
+                if (player === failed) handlePlaybackError()
+                true
+            }
+            nextPlayer.prepareAsync()
+            adapter.notifyDataSetChanged()
+        } catch (_: Exception) {
+            handlePlaybackError()
         }
-        adapter.notifyDataSetChanged()
+    }
+
+    private fun handlePlaybackError() {
+        stopPlayback()
+        toast("No se pudo reproducir la grabación")
     }
 
     private fun stopPlayback() {
-        try { player?.release() } catch (_: Exception) {}
+        val previousPlayer = player
         player = null
         playing = null
+        previousPlayer?.release()
         if (::adapter.isInitialized) adapter.notifyDataSetChanged()
     }
 
@@ -191,7 +247,7 @@ class MainActivity : AppCompatActivity() {
             .setMessage(dateFmt.format(Date(file.lastModified())))
             .setPositiveButton("Eliminar") { _, _ ->
                 if (playing == file) stopPlayback()
-                file.delete()
+                if (!file.delete() && file.exists()) toast("No se pudo eliminar la grabación")
                 refreshUi()
             }
             .setNegativeButton("Cancelar", null)
@@ -201,38 +257,59 @@ class MainActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ interfaz
 
     private fun refreshUi() {
-        val status = Prefs.getStatus(this)
-        val accent = ContextCompat.getColor(this, R.color.pc_accent)
-        val muted = ContextCompat.getColor(this, R.color.pc_text_secondary)
-        val text = ContextCompat.getColor(this, R.color.pc_text)
-
-        when (status) {
-            Prefs.STATUS_LOADING -> { tvStatus.text = "CARGANDO MODELO…"; tvStatus.setTextColor(muted) }
-            Prefs.STATUS_LISTENING -> { tvStatus.text = "ESCUCHANDO"; tvStatus.setTextColor(accent) }
-            Prefs.STATUS_RECORDING -> { tvStatus.text = "● GRABANDO"; tvStatus.setTextColor(accent) }
-            else -> { tvStatus.text = "APAGADO"; tvStatus.setTextColor(muted) }
+        val status = when (Prefs.getStatus(this)) {
+            Prefs.STATUS_LOADING -> RecorderStatus.Loading
+            Prefs.STATUS_LISTENING -> RecorderStatus.Listening
+            Prefs.STATUS_RECORDING -> RecorderStatus.Recording
+            else -> RecorderStatus.Idle
         }
 
-        val idle = status == Prefs.STATUS_IDLE
-        val recording = status == Prefs.STATUS_RECORDING
-
-        btnToggle.text = if (idle) "Activar escucha" else "Apagar"
+        val idle = status == RecorderStatus.Idle
+        tvStatus.setText(status.label)
+        tvStatusTitle.setText(status.title)
+        tvStatusDetail.setText(status.detail)
+        statusDot.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, status.dot))
+        btnToggle.setText(if (idle) R.string.recorder_enable else R.string.recorder_disable)
         btnToggle.setBackgroundResource(
-            if (idle) R.drawable.bg_primary_button else R.drawable.bg_secondary_button
+            if (idle) R.drawable.bg_recorder_primary else R.drawable.bg_recorder_secondary
         )
-        btnToggle.setTextColor(if (idle) 0xFFFFFFFF.toInt() else text)
-        btnStopRec.visibility = if (recording) View.VISIBLE else View.GONE
+        btnToggle.setTextColor(
+            ContextCompat.getColor(
+                this, if (idle) R.color.recorder_on_primary else R.color.recorder_hero_text
+            )
+        )
+        btnStopRec.visibility = if (status == RecorderStatus.Recording) View.VISIBLE else View.GONE
 
-        var found = ListenService.recordingsDir(this)
-            .listFiles { f -> f.extension == "wav" }
+        val found = ListenService.recordingsDir(this)
+            .listFiles { f -> f.isFile && f.extension == "wav" }
             ?.sortedByDescending { it.lastModified() } ?: emptyList()
-        // La grabación en curso todavía no tiene el encabezado completo: no se muestra.
-        if (recording) found = found.drop(1)
 
         files.clear()
         files.addAll(found)
+        emptyRecordings.visibility = if (files.isEmpty()) View.VISIBLE else View.GONE
+        recordingsCount.text = resources.getQuantityString(
+            R.plurals.recorder_audio_count, files.size, files.size
+        )
         adapter.notifyDataSetChanged()
-        tvEmpty.visibility = if (files.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private enum class RecorderStatus(val label: Int, val title: Int, val detail: Int, val dot: Int) {
+        Idle(
+            R.string.recorder_status_idle, R.string.recorder_heading_idle,
+            R.string.recorder_detail_idle, R.color.recorder_dot_idle
+        ),
+        Loading(
+            R.string.recorder_status_loading, R.string.recorder_heading_loading,
+            R.string.recorder_detail_loading, R.color.recorder_dot_loading
+        ),
+        Listening(
+            R.string.recorder_status_listening, R.string.recorder_heading_listening,
+            R.string.recorder_detail_listening, R.color.recorder_dot_listening
+        ),
+        Recording(
+            R.string.recorder_status_recording, R.string.recorder_heading_recording,
+            R.string.recorder_detail_recording, R.color.recorder_dot_recording
+        )
     }
 
     private fun duration(f: File): String {
@@ -251,11 +328,29 @@ class MainActivity : AppCompatActivity() {
             val v = convertView
                 ?: LayoutInflater.from(parent.context).inflate(R.layout.item_recording, parent, false)
             val f = files[position]
-            v.findViewById<TextView>(R.id.item_title).text = dateFmt.format(Date(f.lastModified()))
-            v.findViewById<TextView>(R.id.item_sub).text = duration(f)
+            val date = dateFmt.format(Date(f.lastModified()))
+            val length = duration(f)
+            val isSelected = f == playing
+            v.findViewById<TextView>(R.id.item_title).text = date
+            v.findViewById<TextView>(R.id.item_sub).text = length
+            v.findViewById<View>(R.id.recording_card).isActivated = isSelected
             v.findViewById<ImageView>(R.id.item_icon).setImageResource(
-                if (f == playing) R.drawable.ic_pause else R.drawable.ic_play
+                if (isSelected) R.drawable.ic_stop else R.drawable.ic_play
             )
+            v.findViewById<View>(R.id.recording_play).apply {
+                contentDescription = getString(
+                    if (isSelected) R.string.stop_playback else R.string.play_recording, date, length
+                )
+                setOnClickListener { togglePlay(f) }
+                setOnLongClickListener {
+                    confirmDelete(f)
+                    true
+                }
+            }
+            v.findViewById<View>(R.id.item_delete).apply {
+                contentDescription = getString(R.string.recorder_delete_action, date)
+                setOnClickListener { confirmDelete(f) }
+            }
             return v
         }
     }

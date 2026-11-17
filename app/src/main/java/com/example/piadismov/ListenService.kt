@@ -13,20 +13,19 @@ import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import org.json.JSONObject
 import org.vosk.LibVosk
 import org.vosk.LogLevel
 import org.vosk.Model
-import org.vosk.Recognizer
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -56,11 +55,7 @@ class ListenService : Service() {
         /** Tope de seguridad por grabación. */
         private const val MAX_RECORDING_MS = 30 * 60 * 1000L
 
-        /** Al empezar a grabar, se ignora la palabra durante este tiempo (para no cortar de inmediato). */
-        private const val STOP_WORD_GUARD_MS = 3000L
-
-        /** Tras detener, pausa corta antes de volver a detectar. */
-        private const val COOLDOWN_MS = 1500L
+        private const val PRE_ROLL_SECONDS = 3
 
         fun recordingsDir(c: Context): File {
             val base = c.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: c.filesDir
@@ -71,22 +66,27 @@ class ListenService : Service() {
     @Volatile private var running = false
     @Volatile private var stopRecordingRequested = false
     private var worker: Thread? = null
+    private var destroyed = false
     private val main = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        val ch = NotificationChannel(CHANNEL, "Escucha de palabra clave", NotificationManager.IMPORTANCE_LOW)
-        ch.setShowBadge(false)
-        getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL, "Escucha de palabra clave", NotificationManager.IMPORTANCE_LOW
+            )
+            channel.setShowBadge(false)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
                 running = false
-                if (worker?.isAlive != true) {
+                if (worker == null) {
                     Prefs.setStatus(this, Prefs.STATUS_IDLE)
                     stopSelf()
                 }
@@ -94,7 +94,7 @@ class ListenService : Service() {
             }
             ACTION_STOP_RECORDING -> {
                 stopRecordingRequested = true
-                if (worker?.isAlive != true) {
+                if (worker == null) {
                     Prefs.setStatus(this, Prefs.STATUS_IDLE)
                     stopSelf()
                 }
@@ -102,13 +102,17 @@ class ListenService : Service() {
             }
         }
 
+        if (worker != null) return START_NOT_STICKY
+        val keyword = Prefs.getKeyword(this)
+
         // Obligatorio llamar a startForeground rápido tras startForegroundService.
         try {
-            ServiceCompat.startForeground(
-                this, NOTIF_ID,
-                buildNotification(Prefs.STATUS_LOADING, Prefs.getKeyword(this), 0L),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
+            val notification = buildNotification(Prefs.STATUS_LOADING, keyword, 0L)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "No se pudo iniciar en primer plano", e)
             toast("No se pudo activar el micrófono")
@@ -126,42 +130,40 @@ class ListenService : Service() {
             return START_NOT_STICKY
         }
 
-        if (!running) {
-            running = true
-            worker = Thread({ loop() }, "escucha-loop").also { it.start() }
-        }
+        stopRecordingRequested = false
+        running = true
+        Prefs.setStatus(this, Prefs.STATUS_LOADING, keyword)
+        worker = Thread({ loop(keyword) }, "escucha-loop").also { it.start() }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        destroyed = true
         running = false
+        Prefs.setStatus(this, Prefs.STATUS_IDLE)
         super.onDestroy()
     }
 
     // ---------------------------------------------------------------- bucle principal
 
-    private fun loop() {
+    private fun loop(keyword: String) {
         var model: Model? = null
-        var rec: Recognizer? = null
+        var detector: VoiceKeywordDetector? = null
         var audio: AudioRecord? = null
         var wav: WavWriter? = null
         try {
-            Prefs.setStatus(this, Prefs.STATUS_LOADING)
-
-            val keyword = Prefs.getKeyword(this).lowercase(Locale.ROOT).trim()
-            require(keyword.isNotEmpty()) { "La palabra clave está vacía" }
-            updateNotification(Prefs.STATUS_LOADING, keyword, 0L)
-
+            require(KeywordPhrase(keyword).isValid) { "La palabra clave debe incluir letras" }
             LibVosk.setLogLevel(LogLevel.WARNINGS)
-            model = Model(prepareModel().absolutePath)
-
-            // Vocabulario completo (sin gramática restringida): así las demás palabras se
-            // reconocen como lo que son y no se confunden con tu palabra clave.
-            rec = Recognizer(model, SAMPLE_RATE.toFloat())
+            val modelPath = prepareModel()
+            if (!running) return
+            model = Model(modelPath.absolutePath)
+            detector = VoiceKeywordDetector(model, SAMPLE_RATE, keyword)
+            if (!running) return
 
             val minBuf = AudioRecord.getMinBufferSize(
                 SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
             )
+            check(minBuf > 0) { "El micrófono no admite el formato de audio" }
             audio = AudioRecord(
                 MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
@@ -169,51 +171,45 @@ class ListenService : Service() {
             )
             check(audio.state == AudioRecord.STATE_INITIALIZED) { "No se pudo abrir el micrófono" }
             audio.startRecording()
+            check(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                "El micrófono no está grabando"
+            }
 
-            Prefs.setStatus(this, Prefs.STATUS_LISTENING)
-            updateNotification(Prefs.STATUS_LISTENING, keyword, 0L)
+            publishStatus(Prefs.STATUS_LISTENING, keyword)
 
             val buf = ShortArray(2048)
+            val history = PcmHistory(SAMPLE_RATE * PRE_ROLL_SECONDS)
             var recStart = 0L
-            var ignoreUntil = 0L
 
             while (running) {
                 val n = audio.read(buf, 0, buf.size)
-                if (n < 0) break
+                if (!running) break
+                check(n >= 0) { "No se pudo leer el micrófono ($n)" }
                 if (n == 0) continue
-                val now = System.currentTimeMillis()
 
                 if (wav == null) {
-                    // MODO ESCUCHA: buscar la palabra
-                    if (now < ignoreUntil) continue
-                    // Solo se evalúa cuando Vosk da un resultado FINAL (la frase terminó).
-                    if (rec.acceptWaveForm(buf, n) && heardKeyword(rec.result, keyword)) {
-                        rec.reset()
+                    history.append(buf, n)
+                    if (detector.accept(buf, n) && running) {
+                        detector.reset()
                         stopRecordingRequested = false
-                        wav = WavWriter(newRecordingFile(), SAMPLE_RATE)
-                        recStart = now
-                        wav.write(buf, n)
-                        Prefs.setStatus(this, Prefs.STATUS_RECORDING)
-                        updateNotification(Prefs.STATUS_RECORDING, keyword, recStart)
+                        wav = WavWriter(newPendingRecordingFile(), SAMPLE_RATE)
+                        history.writeTo(wav)
+                        history.clear()
+                        recStart = SystemClock.elapsedRealtime()
+                        publishStatus(Prefs.STATUS_RECORDING, keyword, System.currentTimeMillis())
                     }
                 } else {
-                    // MODO GRABACIÓN: guardar audio hasta que pidan detener
                     wav.write(buf, n)
-                    val elapsed = now - recStart
-                    var stop = stopRecordingRequested || elapsed >= MAX_RECORDING_MS
-
-                    // Decir la palabra otra vez también detiene (pasado un margen inicial).
-                    if (!stop && elapsed >= STOP_WORD_GUARD_MS) {
-                        if (rec.acceptWaveForm(buf, n) && heardKeyword(rec.result, keyword)) stop = true
-                    }
-
+                    val elapsed = SystemClock.elapsedRealtime() - recStart
+                    val stop = stopRecordingRequested || elapsed >= MAX_RECORDING_MS ||
+                        detector.accept(buf, n)
                     if (stop) {
-                        wav.close(); wav = null
-                        rec.reset()
+                        val completedRecording = wav
+                        wav = null
+                        completedRecording.close()
+                        detector.reset()
                         stopRecordingRequested = false
-                        ignoreUntil = now + COOLDOWN_MS
-                        Prefs.setStatus(this, Prefs.STATUS_LISTENING)
-                        updateNotification(Prefs.STATUS_LISTENING, keyword, 0L)
+                        publishStatus(Prefs.STATUS_LISTENING, keyword)
                     }
                 }
             }
@@ -221,28 +217,30 @@ class ListenService : Service() {
             Log.e(TAG, "Error en el bucle", e)
             toast("Error: ${e.message}")
         } finally {
-            try { wav?.close() } catch (_: Exception) {}
+            try {
+                wav?.close()
+            } catch (e: Exception) {
+                Log.e(TAG, "No se pudo guardar la grabación", e)
+                toast("No se pudo guardar la grabación")
+            }
             try { audio?.stop() } catch (_: Exception) {}
             try { audio?.release() } catch (_: Exception) {}
-            try { rec?.close() } catch (_: Exception) {}
+            try { detector?.close() } catch (_: Exception) {}
             try { model?.close() } catch (_: Exception) {}
-            running = false
-            Prefs.setStatus(this, Prefs.STATUS_IDLE)
-            stopSelf()
+            main.post {
+                worker = null
+                if (!destroyed) {
+                    running = false
+                    Prefs.setStatus(this, Prefs.STATUS_IDLE)
+                    stopSelf()
+                }
+            }
         }
     }
 
-    /** True si la frase reconocida contiene la palabra clave COMPLETA (no como parte de otra). */
-    private fun heardKeyword(json: String, keyword: String): Boolean {
-        val text = JSONObject(json).optString("text", "").trim()
-        if (text.isEmpty()) return false
-        Log.d(TAG, "oído: «$text»")
-        return " $text ".contains(" $keyword ")
-    }
-
-    private fun newRecordingFile(): File {
+    private fun newPendingRecordingFile(): File {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        return File(recordingsDir(this), "rec_$stamp.wav")
+        return File.createTempFile("rec_${stamp}_", ".part", recordingsDir(this))
     }
 
     // ---------------------------------------------------------------- modelo Vosk
@@ -321,6 +319,14 @@ class ListenService : Service() {
     private fun updateNotification(state: String, keyword: String, since: Long) {
         getSystemService(NotificationManager::class.java)
             .notify(NOTIF_ID, buildNotification(state, keyword, since))
+    }
+
+    private fun publishStatus(state: String, keyword: String, since: Long = 0L) {
+        main.post {
+            if (!running || destroyed) return@post
+            Prefs.setStatus(this, state)
+            updateNotification(state, keyword, since)
+        }
     }
 
     private fun toast(msg: String) {
